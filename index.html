@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplikasi Absensi Face Recognition</title>
+    <!-- Tailwind CSS for modern responsive styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <!-- FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .mirror { transform: scaleX(-1); }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col">
+
+    <header class="bg-indigo-600 text-white shadow-md">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+            <div class="flex items-center gap-3">
+                <div class="bg-white/10 p-2.5 rounded-xl backdrop-blur-sm">
+                    <i class="fa-solid fa-face-viewfinder text-2xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-tight">FaceAttend Pro</h1>
+                    <p class="text-xs text-indigo-200">Sistem Absensi Cerdas Biometrik Wajah</p>
+                </div>
+            </div>
+            <!-- Navigation Tabs -->
+            <nav class="flex bg-indigo-700/60 p-1.5 rounded-xl gap-1 text-sm font-medium">
+                <button onclick="switchTab('scanner')" id="btn-tab-scanner" class="px-4 py-2 rounded-lg transition-all bg-white text-indigo-600 shadow-sm flex items-center gap-2">
+                    <i class="fa-solid fa-camera"></i> Scan Absen
+                </button>
+                <button onclick="switchTab('register')" id="btn-tab-register" class="px-4 py-2 rounded-lg transition-all text-indigo-100 hover:bg-white/10 flex items-center gap-2">
+                    <i class="fa-solid fa-user-plus"></i> Pendaftaran
+                </button>
+                <button onclick="switchTab('reports')" id="btn-tab-reports" class="px-4 py-2 rounded-lg transition-all text-indigo-100 hover:bg-white/10 flex items-center gap-2">
+                    <i class="fa-solid fa-clipboard-user"></i> Rekap Absen
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <main class="flex-grow max-w-7xl w-full mx-auto p-4 sm:p-6">
+        <div id="model-status" class="mb-4 px-4 py-3 rounded-xl border bg-amber-50 border-amber-200 text-amber-800 text-sm">
+            Memuat model AI pengenalan wajah...
+        </div>
+
+        <!-- NOTIFICATION TOAST -->
+        <div id="toast" class="fixed top-5 right-5 z-50 transform translate-y-[-200%] transition-all duration-300 max-w-sm w-full bg-white border border-slate-200 shadow-xl rounded-2xl p-4 flex items-start gap-3">
+            <div id="toast-icon" class="p-2 rounded-xl bg-emerald-100 text-emerald-600 mt-0.5">
+                <i class="fa-solid fa-check text-lg"></i>
+            </div>
+            <div class="flex-1">
+                <h4 id="toast-title" class="font-bold text-sm text-slate-900">Berhasil</h4>
+                <p id="toast-message" class="text-xs text-slate-600 mt-0.5">Pesan notifikasi...</p>
+            </div>
+            <button onclick="hideToast()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+
+        <!-- 1. SCANNER VIEW -->
+        <section id="view-scanner" class="space-y-6">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Camera Box -->
+                <div class="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                    <div class="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                        <div class="flex items-center gap-2">
+                            <span class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
+                            <h3 class="font-semibold text-slate-700 text-sm">Live Camera Scanner</h3>
+                        </div>
+                        <span id="scan-status-badge" class="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">Menyiapkan Kamera...</span>
+                    </div>
+                    <div class="relative bg-slate-900 flex-grow flex items-center justify-center min-h-[360px] sm:min-h-[420px] overflow-hidden">
+                        <video id="webcam" autoplay playsinline muted class="absolute inset-0 w-full h-full object-cover mirror"></video>
+                        <canvas id="overlay" class="absolute inset-0 w-full h-full pointer-events-none mirror"></canvas>
+                        
+                        <!-- Scanning Frame Overlay Graphic -->
+                        <div class="absolute inset-0 border-[32px] border-slate-900/40 pointer-events-none flex items-center justify-center">
+                            <div class="w-64 h-80 border-2 border-dashed border-indigo-400/80 rounded-3xl relative animate-pulse flex flex-col items-center justify-center p-4">
+                                <div class="absolute top-0 left-0 w-6 h-6 border-t-4 border-l-4 border-indigo-400 rounded-tl-xl"></div>
+                                <div class="absolute top-0 right-0 w-6 h-6 border-t-4 border-r-4 border-indigo-400 rounded-tr-xl"></div>
+                                <div class="absolute bottom-0 left-0 w-6 h-6 border-b-4 border-l-4 border-indigo-400 rounded-bl-xl"></div>
+                                <div class="absolute bottom-0 right-0 w-6 h-6 border-b-4 border-r-4 border-indigo-400 rounded-br-xl"></div>
+                                <p class="text-white/80 text-xs bg-slate-900/70 px-3 py-1 rounded-full backdrop-blur-sm mt-48 text-center">Posisikan wajah di dalam kotak</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="p-4 bg-white border-t border-slate-100 flex flex-wrap items-center justify-between gap-4">
+                        <div class="text-xs text-slate-500">
+                            Pastikan ruangan cukup terang dan wajah menghadap langsung ke kamera.
+                        </div>
+                        <button onclick="triggerManualScan()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-5 py-2.5 rounded-xl shadow-lg shadow-indigo-600/25 transition-all text-sm flex items-center gap-2">
+                            <i class="fa-solid fa-fingerprint"></i> Scan Wajah Sekarang
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Live Attendance Log & Quick Stats -->
+                <div class="space-y-6">
+                    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
+                        <h3 class="font-semibold text-slate-800 text-sm mb-4 flex items-center justify-between">
+                            <span>Statistik Hari Ini</span>
+                            <span id="current-date-label" class="text-xs text-slate-400 font-normal">--/--/----</span>
+                        </h3>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="bg-indigo-50/60 p-4 rounded-xl border border-indigo-100">
+                                <p class="text-xs text-indigo-600 font-medium">Total Hadir</p>
+                                <h4 id="stat-total-hadir" class="text-2xl font-bold text-indigo-900 mt-1">0</h4>
+                            </div>
+                            <div class="bg-emerald-50/60 p-4 rounded-xl border border-emerald-100">
+                                <p class="text-xs text-emerald-600 font-medium">Tepat Waktu</p>
+                                <h4 id="stat-tepat-waktu" class="text-2xl font-bold text-emerald-900 mt-1">0</h4>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col h-[320px]">
+                        <div class="p-4 border-b border-slate-100 bg-slate-50/50">
+                            <h3 class="font-semibold text-slate-700 text-sm">Log Absensi Terbaru</h3>
+                        </div>
+                        <div id="live-attendance-list" class="divide-y divide-slate-100 overflow-y-auto flex-grow p-2 space-y-2">
+                            <div class="text-center py-10 text-slate-400 text-xs">
+                                <i class="fa-solid fa-clock text-2xl mb-2 text-slate-300"></i>
+                                <p>Belum ada absensi masuk hari ini.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. REGISTRATION VIEW -->
+        <section id="view-register" class="hidden space-y-6 max-w-4xl mx-auto">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 sm:p-8">
+                <div class="mb-6">
+                    <h2 class="text-lg font-bold text-slate-900">Pendaftaran Wajah Baru (Enrollment)</h2>
+                    <p class="text-xs text-slate-500 mt-1">Daftarkan data diri siswa beserta descriptor biometrik wajah. Data dapat disimpan terpusat di Google Sheets.</p>
+                </div>
+
+                <form id="form-register" onsubmit="handleRegister(event)" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Nomor Induk / ID (NIP/NIS)</label>
+                            <input type="text" id="reg-id" required placeholder="Contoh: 10293847" class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Nama Lengkap</label>
+                            <input type="text" id="reg-name" required placeholder="Contoh: Budi Santoso" class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">Divisi / Kelas / Departemen</label>
+                            <input type="text" id="reg-dept" required placeholder="Contoh: Teknik Informatika / XII RPL 1" class="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500">
+                        </div>
+                        <div class="pt-2">
+                            <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 rounded-xl shadow-lg shadow-indigo-600/25 transition-all text-sm flex items-center justify-center gap-2">
+                                <i class="fa-solid fa-user-check"></i> Simpan Data & Wajah
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Face Capture Box for Registration -->
+                    <div class="flex flex-col items-center justify-center bg-slate-900 rounded-2xl p-4 relative overflow-hidden min-h-[300px]">
+                        <video id="reg-video" autoplay playsinline muted class="absolute inset-0 w-full h-full object-cover mirror"></video>
+                        <canvas id="reg-canvas" class="hidden"></canvas>
+                        
+                        <!-- Captured Preview Image Container -->
+                        <div id="capture-preview-container" class="absolute inset-0 bg-slate-900 flex items-center justify-center hidden">
+                            <img id="capture-preview-img" class="w-full h-full object-cover mirror" alt="Preview Foto">
+                            <div class="absolute inset-0 bg-black/40 flex items-center justify-center">
+                                <span class="bg-emerald-500 text-white text-xs px-3 py-1.5 rounded-full font-medium flex items-center gap-1.5 shadow-md">
+                                    <i class="fa-solid fa-circle-check"></i> Wajah Berhasil Ditangkap
+                                </span>
+                            </div>
+                        </div>
+
+                        <div class="absolute bottom-4 z-10 flex gap-2 w-full px-4 justify-center">
+                            <button type="button" id="btn-capture" onclick="captureFace()" class="bg-white/90 hover:bg-white text-slate-900 px-4 py-2 rounded-xl text-xs font-semibold shadow backdrop-blur-sm transition-all flex items-center gap-2">
+                                <i class="fa-solid fa-camera-retro text-indigo-600"></i> Ambil Foto Wajah
+                            </button>
+                            <button type="button" id="btn-recapture" onclick="recaptureFace()" class="hidden bg-rose-500/90 hover:bg-rose-600 text-white px-4 py-2 rounded-xl text-xs font-semibold shadow backdrop-blur-sm transition-all flex items-center gap-2">
+                                <i class="fa-solid fa-rotate-right">></i> Ulangi Foto
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+
+            <!-- List of Registered Users -->
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                <h3 class="font-bold text-slate-900 text-sm mb-4">Daftar Pengguna Terdaftar (<span id="count-registered">0</span>)</h3>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-50 text-slate-500 border-b border-slate-100">
+                            <tr>
+                                <th class="p-3">Foto</th>
+                                <th class="p-3">ID</th>
+                                <th class="p-3">Nama Lengkap</th>
+                                <th class="p-3">Departemen/Kelas</th>
+                                <th class="p-3 text-right">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="registered-users-table" class="divide-y divide-slate-100">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. REPORTS VIEW -->
+        <section id="view-reports" class="hidden space-y-6">
+            <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+                <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                    <div>
+                        <h2 class="text-lg font-bold text-slate-900">Rekapitulasi Laporan Absensi</h2>
+                        <p class="text-xs text-slate-500 mt-0.5">Riwayat lengkap kehadiran harian pegawai dan siswa.</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="exportData()" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-2">
+                            <i class="fa-solid fa-download"></i> Ekspor CSV
+                        </button>
+                        <button onclick="clearReports()" class="bg-rose-50 hover:bg-rose-100 text-rose-600 px-4 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-2">
+                            <i class="fa-solid fa-trash-can"></i> Reset Log
+                        </button>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-50 text-slate-500 border-b border-slate-100">
+                            <tr>
+                                <th class="p-3">Waktu</th>
+                                <th class="p-3">ID</th>
+                                <th class="p-3">Nama</th>
+                                <th class="p-3">Departemen</th>
+                                <th class="p-3">Status</th>
+                                <th class="p-3">Confidence / Match</th>
+                            </tr>
+                        </thead>
+                        <tbody id="reports-table-body" class="divide-y divide-slate-100">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <script>
+        // State Management
+        let registeredUsers = JSON.parse(localStorage.getItem('face_users') || '[]');
+        let attendanceLogs = JSON.parse(localStorage.getItem('face_logs') || '[]');
+        let currentCapturedImage = null;
+        let currentDescriptor = null;
+        let videoStream = null;
+        let isScannerActive = false;
+        let modelsLoaded = false;
+        let recognitionBusy = false;
+        const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights';
+        const FACE_MATCH_THRESHOLD = 0.52;
+
+        // Initialize App on Load
+        window.addEventListener('DOMContentLoaded', async () => {
+            updateDateLabel();
+            renderRegisteredUsers();
+            renderReports();
+            updateStats();
+            await loadFaceModels();
+            try {
+                const connected = await loadCentralUsers();
+                if (connected) {
+                    showToast('Terhubung', 'Data siswa berhasil dimuat dari Google Sheets.', 'success');
+                }
+            } catch (err) {
+                console.warn(err);
+                showToast('Mode Lokal', 'Google Sheets belum terhubung. Aplikasi menggunakan data browser.', 'error');
+            }
+            switchTab('scanner');
+        });
+
+        async function loadFaceModels() {
+            const status = document.getElementById('model-status');
+            try {
+                status.innerText = 'Mengunduh model AI wajah... pertama kali membutuhkan beberapa saat.';
+                await Promise.all([
+                    faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+                    faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+                    faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL)
+                ]);
+                modelsLoaded = true;
+                status.className = 'mb-4 px-4 py-3 rounded-xl border bg-emerald-50 border-emerald-200 text-emerald-800 text-sm';
+                status.innerText = '✓ Model AI siap. Sistem sekarang menggunakan pengenalan wajah sebenarnya.';
+            } catch (err) {
+                console.error('Gagal memuat model face-api.js:', err);
+                status.className = 'mb-4 px-4 py-3 rounded-xl border bg-rose-50 border-rose-200 text-rose-800 text-sm';
+                status.innerText = '✗ Model AI gagal dimuat. Pastikan internet aktif dan halaman dijalankan melalui HTTPS/localhost.';
+            }
+        }
+
+        async function getFaceDescriptor(input) {
+            if (!modelsLoaded) throw new Error('Model AI belum siap.');
+            const result = await faceapi
+                .detectSingleFace(input, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 }))
+                .withFaceLandmarks()
+                .withFaceDescriptor();
+            return result ? result.descriptor : null;
+        }
+
+
+        // ================= GOOGLE SHEETS CONFIG =================
+        // Setelah Web App Apps Script dideploy, masukkan URL /exec di sini.
+        const GOOGLE_SCRIPT_URL = 'PASTE_URL_WEB_APP_APPS_SCRIPT_DI_SINI';
+        // =========================================================
+
+        function isGoogleSheetConnected() {
+            return GOOGLE_SCRIPT_URL && GOOGLE_SCRIPT_URL.startsWith('https://script.google.com/macros/s/');
+        }
+
+        function apiGet(params) {
+            if (!isGoogleSheetConnected()) return Promise.reject(new Error('URL Apps Script belum diatur.'));
+            const qs = new URLSearchParams(params);
+            return fetch(GOOGLE_SCRIPT_URL + '?' + qs.toString(), { method: 'GET', cache: 'no-store', mode: 'no-cors' });
+        }
+
+        function loadCentralUsers() {
+            return new Promise((resolve, reject) => {
+                if (!isGoogleSheetConnected()) {
+                    resolve(false);
+                    return;
+                }
+                const callbackName = 'faceUsersCallback_' + Date.now();
+                const script = document.createElement('script');
+                const timeout = setTimeout(() => {
+                    cleanup();
+                    reject(new Error('Timeout mengambil data dari Google Sheets.'));
+                }, 15000);
+
+                function cleanup() {
+                    clearTimeout(timeout);
+                    delete window[callbackName];
+                    script.remove();
+                }
+
+                window[callbackName] = data => {
+                    cleanup();
+                    if (data && data.success && Array.isArray(data.users)) {
+                        registeredUsers = data.users;
+                        localStorage.setItem('face_users', JSON.stringify(registeredUsers));
+                        renderRegisteredUsers();
+                        resolve(true);
+                    } else {
+                        reject(new Error(data?.message || 'Gagal mengambil data siswa.'));
+                    }
+                };
+
+                script.src = GOOGLE_SCRIPT_URL + '?action=getUsers&callback=' + encodeURIComponent(callbackName);
+                script.onerror = () => {
+                    cleanup();
+                    reject(new Error('Gagal terhubung ke Apps Script.'));
+                };
+                document.head.appendChild(script);
+            });
+        }
+
+        async function saveUserToCentral(user) {
+            if (!isGoogleSheetConnected()) return false;
+            await apiGet({
+                action: 'register',
+                id: user.id,
+                name: user.name,
+                dept: user.dept,
+                descriptor: JSON.stringify(user.descriptor)
+            });
+            return true;
+        }
+
+        async function saveAttendanceToCentral(log) {
+            if (!isGoogleSheetConnected()) return false;
+            await apiGet({
+                action: 'attendance',
+                id: log.id,
+                name: log.name,
+                dept: log.dept,
+                date: log.date,
+                time: log.time,
+                status: log.status,
+                confidence: log.confidence,
+                distance: log.distance || ''
+            });
+            return true;
+        }
+
+        function updateDateLabel() {
+            const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+            document.getElementById('current-date-label').innerText = new Date().toLocaleDateString('id-ID', options);
+        }
+
+        // Tab Switching Logic
+        function switchTab(tabName) {
+            ['scanner', 'register', 'reports'].forEach(tab => {
+                document.getElementById(`view-${tab}`).classList.add('hidden');
+                const btn = document.getElementById(`btn-tab-${tab}`);
+                if (btn) {
+                    btn.className = "px-4 py-2 rounded-lg transition-all text-indigo-100 hover:bg-white/10 flex items-center gap-2";
+                }
+            });
+
+            document.getElementById(`view-${tabName}`).classList.remove('hidden');
+            const activeBtn = document.getElementById(`btn-tab-${tabName}`);
+            if (activeBtn) {
+                activeBtn.className = "px-4 py-2 rounded-lg transition-all bg-white text-indigo-600 shadow-sm flex items-center gap-2 font-medium";
+            }
+
+            // Camera lifecycle management
+            if (tabName === 'scanner') {
+                stopCamera('reg-video');
+                startCamera('webcam');
+                isScannerActive = true;
+            } else if (tabName === 'register') {
+                stopCamera('webcam');
+                startCamera('reg-video');
+                isScannerActive = false;
+            } else {
+                stopCamera('webcam');
+                stopCamera('reg-video');
+                isScannerActive = false;
+            }
+        }
+
+        // Camera Controls
+        async function startCamera(videoElementId) {
+            try {
+                const videoEl = document.getElementById(videoElementId);
+                if (videoEl && !videoEl.srcObject) {
+                    videoStream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } });
+                    videoEl.srcObject = videoStream;
+                    if(videoElementId === 'webcam') {
+                        document.getElementById('scan-status-badge').className = "px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700";
+                        document.getElementById('scan-status-badge').innerText = "Kamera Aktif & Siaga";
+                    }
+                }
+            } catch (err) {
+                console.error("Gagal mengakses kamera:", err);
+                if(videoElementId === 'webcam') {
+                    document.getElementById('scan-status-badge').className = "px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-100 text-rose-700";
+                    document.getElementById('scan-status-badge').innerText = "Kamera Tidak Ditemukan / Diblokir";
+                }
+            }
+        }
+
+        function stopCamera(videoElementId) {
+            const videoEl = document.getElementById(videoElementId);
+            if (videoEl && videoEl.srcObject) {
+                const tracks = videoEl.srcObject.getTracks();
+                tracks.forEach(track => track.stop());
+                videoEl.srcObject = null;
+            }
+        }
+
+        // Capture Face for Registration
+        async function captureFace() {
+            const video = document.getElementById('reg-video');
+            const canvas = document.getElementById('reg-canvas');
+
+            if (!modelsLoaded) {
+                showToast('Tunggu', 'Model AI masih dimuat.', 'error');
+                return;
+            }
+            if (!video.videoWidth) {
+                showToast('Peringatan', 'Kamera belum siap.', 'error');
+                return;
+            }
+
+            try {
+                const descriptor = await getFaceDescriptor(video);
+                if (!descriptor) {
+                    showToast('Wajah Tidak Terdeteksi', 'Pastikan wajah terlihat jelas, cukup terang, dan berada di tengah kamera.', 'error');
+                    return;
+                }
+
+                canvas.width = video.videoWidth || 640;
+                canvas.height = video.videoHeight || 480;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                currentCapturedImage = canvas.toDataURL('image/jpeg', 0.85);
+                currentDescriptor = Array.from(descriptor);
+
+                const previewImg = document.getElementById('capture-preview-img');
+                previewImg.src = currentCapturedImage;
+                document.getElementById('capture-preview-container').classList.remove('hidden');
+                document.getElementById('btn-capture').classList.add('hidden');
+                document.getElementById('btn-recapture').classList.remove('hidden');
+                showToast('Sukses', 'Wajah terdeteksi dan descriptor biometrik berhasil dibuat.', 'success');
+            } catch (err) {
+                console.error(err);
+                showToast('Error', 'Gagal memproses wajah: ' + err.message, 'error');
+            }
+        }
+
+        function recaptureFace() {
+            currentCapturedImage = null;
+            currentDescriptor = null;
+            document.getElementById('capture-preview-container').classList.add('hidden');
+            document.getElementById('btn-capture').classList.remove('hidden');
+            document.getElementById('btn-recapture').classList.add('hidden');
+        }
+
+        // Handle Registration Form Submission
+        async function handleRegister(e) {
+            e.preventDefault();
+            if (!currentCapturedImage) {
+                showToast('Peringatan', 'Harap ambil foto wajah terlebih dahulu sebelum menyimpan.', 'error');
+                return;
+            }
+
+            const id = document.getElementById('reg-id').value.trim();
+            const name = document.getElementById('reg-name').value.trim();
+            const dept = document.getElementById('reg-dept').value.trim();
+
+            if (registeredUsers.some(u => u.id === id)) {
+                showToast('Error', `Pengguna dengan ID ${id} sudah terdaftar!`, 'error');
+                return;
+            }
+
+            const newUser = {
+                id,
+                name,
+                dept,
+                image: currentCapturedImage,
+                descriptor: currentDescriptor,
+                registeredAt: new Date().toISOString()
+            };
+
+            registeredUsers.push(newUser);
+            localStorage.setItem('face_users', JSON.stringify(registeredUsers));
+
+            if (isGoogleSheetConnected()) {
+                try {
+                    await saveUserToCentral(newUser);
+                    showToast('Tersimpan', `Data ${name} berhasil dikirim ke Google Sheets.`, 'success');
+                } catch (err) {
+                    console.error(err);
+                    showToast('Peringatan', 'Data tersimpan di browser, tetapi gagal dikirim ke Google Sheets.', 'error');
+                }
+            }
+
+            // Reset form
+            document.getElementById('form-register').reset();
+            recaptureFace();
+            renderRegisteredUsers();
+            showToast('Berhasil', `Data ${name} berhasil didaftarkan ke sistem!`, 'success');
+        }
+
+        // Render Registered Users Table
+        function renderRegisteredUsers() {
+            const tbody = document.getElementById('registered-users-table');
+            document.getElementById('count-registered').innerText = registeredUsers.length;
+
+            if (registeredUsers.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="p-6 text-center text-slate-400">Belum ada pengguna terdaftar.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = registeredUsers.map(u => `
+                <tr class="hover:bg-slate-50/80 transition-colors">
+                    <td class="p-3">
+                        <img src="${u.image}" class="w-10 h-10 rounded-full object-cover border border-slate-200" alt="${u.name}">
+                    </td>
+                    <td class="p-3 font-semibold text-slate-900">${u.id}</td>
+                    <td class="p-3 font-medium text-slate-800">${u.name}</td>
+                    <td class="p-3 text-slate-500">${u.dept}</td>
+                    <td class="p-3 text-right">
+                        <button onclick="deleteUser('${u.id}')" class="text-rose-500 hover:text-rose-700 p-1.5 rounded-lg hover:bg-rose-50 transition-colors"><i class="fa-solid fa-trash"></i></button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function deleteUser(id) {
+            if (confirm('Apakah Anda yakin ingin menghapus data pengguna ini?')) {
+                registeredUsers = registeredUsers.filter(u => u.id !== id);
+                localStorage.setItem('face_users', JSON.stringify(registeredUsers));
+                renderRegisteredUsers();
+                showToast('Terhapus', 'Data pengguna berhasil dihapus.', 'success');
+            }
+        }
+
+        // Real-time face recognition scanner
+        async function triggerManualScan() {
+            if (!modelsLoaded) {
+                showToast('Tunggu', 'Model AI belum selesai dimuat.', 'error');
+                return;
+            }
+            if (recognitionBusy) return;
+            if (registeredUsers.length === 0) {
+                showToast('Perhatian', 'Belum ada data wajah terdaftar. Lakukan pendaftaran terlebih dahulu.', 'error');
+                switchTab('register');
+                return;
+            }
+
+            const video = document.getElementById('webcam');
+            if (!video.videoWidth) {
+                showToast('Kamera', 'Kamera belum siap.', 'error');
+                return;
+            }
+
+            recognitionBusy = true;
+            try {
+                const result = await faceapi
+                    .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 }))
+                    .withFaceLandmarks()
+                    .withFaceDescriptor();
+
+                if (!result) {
+                    showToast('Wajah Tidak Ditemukan', 'Posisikan satu wajah di dalam kotak scanner.', 'error');
+                    return;
+                }
+
+                const candidates = registeredUsers.filter(u => Array.isArray(u.descriptor) && u.descriptor.length === 128);
+                if (!candidates.length) {
+                    showToast('Data Lama', 'Pengguna terdaftar belum memiliki descriptor wajah. Daftarkan ulang wajah tersebut.', 'error');
+                    return;
+                }
+
+                let bestUser = null;
+                let bestDistance = Infinity;
+
+                for (const user of candidates) {
+                    const distance = faceapi.euclideanDistance(result.descriptor, new Float32Array(user.descriptor));
+                    if (distance < bestDistance) {
+                        bestDistance = distance;
+                        bestUser = user;
+                    }
+                }
+
+                if (!bestUser || bestDistance > FACE_MATCH_THRESHOLD) {
+                    showToast('Wajah Tidak Dikenali', `Tidak ada kecocokan. Jarak descriptor: ${bestDistance.toFixed(3)}`, 'error');
+                    return;
+                }
+
+                // Convert distance to an easy-to-read similarity percentage.
+                const confidence = Math.max(0, Math.min(99.9, (1 - bestDistance / FACE_MATCH_THRESHOLD) * 100 + 50)).toFixed(2);
+                const now = new Date();
+                const timeString = now.toLocaleTimeString('id-ID');
+                const dateString = now.toLocaleDateString('id-ID');
+
+                const alreadyChecked = attendanceLogs.some(log => log.id === bestUser.id && log.date === dateString);
+                const newLog = {
+                    id: bestUser.id,
+                    name: bestUser.name,
+                    dept: bestUser.dept,
+                    time: timeString,
+                    date: dateString,
+                    status: alreadyChecked ? 'Hadir (Pulang/Update)' : 'Tepat Waktu',
+                    confidence: confidence + '%',
+                    distance: bestDistance.toFixed(4)
+                };
+
+                attendanceLogs.unshift(newLog);
+                localStorage.setItem('face_logs', JSON.stringify(attendanceLogs));
+
+                if (isGoogleSheetConnected()) {
+                    try {
+                        await saveAttendanceToCentral(newLog);
+                    } catch (err) {
+                        console.error('Gagal menyimpan absensi ke Google Sheets:', err);
+                        showToast('Peringatan', 'Absensi tersimpan lokal, tetapi gagal dikirim ke Google Sheets.', 'error');
+                    }
+                }
+
+                renderReports();
+                updateStats();
+                appendLiveLog(newLog);
+
+                showToast('Absensi Berhasil', `Wajah dikenali: ${bestUser.name} (${confidence}%)`, 'success');
+            } catch (err) {
+                console.error('Recognition error:', err);
+                showToast('Error', 'Gagal melakukan pengenalan wajah: ' + err.message, 'error');
+            } finally {
+                recognitionBusy = false;
+            }
+        }
+
+        // Live Log Append helper
+        function appendLiveLog(log) {
+            const listEl = document.getElementById('live-attendance-list');
+            // Remove empty state if present
+            if(listEl.querySelector('.text-center')) {
+                listEl.innerHTML = '';
+            }
+
+            const item = document.createElement('div');
+            item.className = "flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 animate-fade-in";
+            item.innerHTML = `
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold text-xs">
+                        <i class="fa-solid fa-check"></i>
+                    </div>
+                    <div>
+                        <h5 class="font-bold text-slate-800 text-xs">${log.name}</h5>
+                        <p class="text-[10px] text-slate-400">${log.dept} • ${log.time}</p>
+                    </div>
+                </div>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-600 border border-emerald-200">${log.confidence}</span>
+            `;
+            listEl.prepend(item);
+        }
+
+        // Render Reports Table
+        function renderReports() {
+            const tbody = document.getElementById('reports-table-body');
+            if (attendanceLogs.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" class="p-6 text-center text-slate-400">Belum ada riwayat absensi terekam.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = attendanceLogs.map(l => `
+                <tr class="hover:bg-slate-50/80 transition-colors">
+                    <td class="p-3 font-medium text-slate-700">${l.date} ${l.time}</td>
+                    <td class="p-3 font-semibold text-slate-900">${l.id}</td>
+                    <td class="p-3 font-medium text-slate-800">${l.name}</td>
+                    <td class="p-3 text-slate-500">${l.dept}</td>
+                    <td class="p-3">
+                        <span class="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700">${l.status}</span>
+                    </td>
+                    <td class="p-3 font-mono text-indigo-600 font-medium">${l.confidence}</td>
+                </tr>
+            `).join('');
+        }
+
+        // Update Dashboard Stats
+        function updateStats() {
+            const todayStr = new Date().toLocaleDateString('id-ID');
+            const todayLogs = attendanceLogs.filter(l => l.date === todayStr);
+            const uniqueHadir = new Set(todayLogs.map(l => l.id)).size;
+
+            document.getElementById('stat-total-hadir').innerText = uniqueHadir;
+            document.getElementById('stat-tepat-waktu').innerText = uniqueHadir; // simplified for demo
+        }
+
+        function clearReports() {
+            if (confirm('Hapus seluruh riwayat log absensi?')) {
+                attendanceLogs = [];
+                localStorage.removeItem('face_logs');
+                renderReports();
+                updateStats();
+                document.getElementById('live-attendance-list').innerHTML = `
+                    <div class="text-center py-10 text-slate-400 text-xs">
+                        <i class="fa-solid fa-clock text-2xl mb-2 text-slate-300"></i>
+                        <p>Belum ada absensi masuk hari ini.</p>
+                    </div>
+                `;
+                showToast('Dibersihkan', 'Log absensi berhasil dikosongkan.', 'success');
+            }
+        }
+
+        function exportData() {
+            if(attendanceLogs.length === 0) {
+                showToast('Info', 'Tidak ada data laporan untuk diexport.', 'error');
+                return;
+            }
+            let csvContent = "data:text/csv;charset=utf-8,ID,Nama,Departemen,Tanggal,Waktu,Status,Confidence,Distance\n";
+            attendanceLogs.forEach(l => {
+                csvContent += `"${l.id}","${l.name}","${l.dept}","${l.date}","${l.time}","${l.status}","${l.confidence}","${l.distance || ""}"\n`;
+            });
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `laporan_absensi_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showToast('Sukses', 'Laporan berhasil diunduh dalam format CSV.', 'success');
+        }
+
+        // Toast Notification Helper
+        function showToast(title, message, type = 'success') {
+            const toast = document.getElementById('toast');
+            document.getElementById('toast-title').innerText = title;
+            document.getElementById('toast-message').innerText = message;
+            
+            const iconContainer = document.getElementById('toast-icon');
+            if(type === 'success') {
+                iconContainer.className = "p-2 rounded-xl bg-emerald-100 text-emerald-600 mt-0.5";
+                iconContainer.innerHTML = '<i class="fa-solid fa-check text-lg"></i>';
+            } else {
+                iconContainer.className = "p-2 rounded-xl bg-rose-100 text-rose-600 mt-0.5";
+                iconContainer.innerHTML = '<i class="fa-solid fa-triangle-exclamation text-lg"></i>';
+            }
+
+            toast.classList.remove('translate-y-[-200%]');
+            setTimeout(() => {
+                toast.classList.add('translate-y-[-200%]');
+            }, 3500);
+        }
+
+        function hideToast() {
+            document.getElementById('toast').classList.add('translate-y-[-200%]');
+        }
+    </script>
+</body>
+</html>
